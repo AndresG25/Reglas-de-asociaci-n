@@ -1,0 +1,159 @@
+---
+title: "Reglas de asociación aplicadas"
+author: "Carlos Andrés Gómez"
+date: '`r format(Sys.Date(), "%B %Y")`'
+output: 
+  prettydoc::html_pretty:
+    df_print: paged
+    theme: cayman
+    highlight: github
+    text-align: center
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+options(scipen=999)
+
+# Librerias necesarias para el trabajo
+library(arules)
+library(arulesViz)
+library(tidyverse)
+library(readxl)
+library(knitr)
+library(ggplot2)
+library(lubridate)
+library(plyr)
+library(readxl)
+
+setwd("C:\\Users\\USUARIO\\Desktop\\Reglas de asociacion\\Reglas-de-asociaci-n")
+```
+
+<div class=text-justify>
+Los algoritmos de reglas de asociación representan una técnica dentro de la `minería de datos`, teniendo como objetivo encontrar patrones de relaciones dentro un conjunto de transacciones.
+<br>
+El **Algoritmo Apriori**, está diseñado para operar sobre bases de datos que contienen transacciones (por ejemplo, colecciones de artículos comprados por consumidores) en donde cada transacción es vista como un conjunto de ítems y es uno de los más utilizados para crear sistemas de recomendaciones que vemos en muchos sitios web.
+
+</div>
+
+# **Obtención de los datos**
+
+Los datos para este ejemplo, son descargados desde [archive.ics.uci.edu](https://archive.ics.uci.edu/ml/machine-learning-databases/) los cuales se encuentran disponibles para uso académico.
+
+```{r message=FALSE, warning=FALSE}
+filedata <- "https://archive.ics.uci.edu/ml/machine-learning-databases/00352/Online%20Retail.xlsx"
+
+if(!file.exists("Online Retail.xlsx")){
+     download.file(filedata, destfile = "Online Retail.xlsx")
+}
+
+#retail <- read.xlsx("Retail.xlsx", sheetIndex = 1)
+retail <- read_excel("Retail.xlsx", sheet=1)
+```
+
+## *Selección de registros completos*
+
+Para procesar los datos de la forma correcta, se realiza un filtrado de tales con el fin de eliminar datos faltantes u errores en la base de datos, para ello usamos la función de **R** `complete.cases`
+
+```{r message=FALSE, warning=FALSE}
+retail1 <- retail[complete.cases(retail), ]
+```
+
+## *Transformación de los datos*
+```{r message=FALSE, warning=FALSE}
+retail1$InvoiceDate <- as.Date(retail1$InvoiceDate)
+retail1 %>% mutate(Description = as.factor(Description))
+```
+
+## *Creación de subset de datos para las transacciones*
+```{r message=FALSE, warning=FALSE}
+transacciones <- ddply(retail1,c("InvoiceNo","InvoiceDate"),
+                       function(df1)paste(df1$Description,
+                                          collapse = ","))
+transacciones$InvoiceNo <- NULL
+transacciones$InvoiceDate <- NULL
+colnames(transacciones) <- c("Productos")
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+write.csv(transacciones,"transacciones.csv", quote = FALSE, row.names = FALSE)
+tr <- read.transactions("transacciones.csv", format = 'basket', sep=',')
+```
+
+## *Revisrar la data a procesar*
+
+```{r message=FALSE, warning=FALSE}
+summary(tr)
+```
+
+## **Aplicación del algoritmo `Apriori` de data mining**
+
+```{r message=FALSE, warning=FALSE}
+reglas.asociacion <- apriori(tr, parameter = list(supp=0.009, conf=0.8, maxlen=10))
+```
+
+## *Resumen del modelo*
+
+```{r message=FALSE, warning=FALSE}
+summary(reglas.asociacion)
+```
+
+Las *Reglas de Asociación* nos dice que si un cliente compra, un producto **"X"**, qué tan probable es que compre otro, donde estos dos productos están relacionados porque otros clientes los compraron a ambos. 
+
+## *Inspección de las reglas de asociación encontradas* 
+
+
+```{r message=FALSE, warning=FALSE}
+inspectDT(reglas.asociacion[1:17])
+```
+
+En la siguiente tabla se pueden observar las principales **Reglas de Asociación de productos** encontradas y se leen de la siguiente manera:
+
+1. **LHS**: Producto (o combinación de productos vendidos).
+2. **RHS**: Producto que probablemente se venda a partir del o los anterior(es).
+3. **support**: El soporte nos dice qué tan frecuente es un elemento o un conjunto de elementos **(de la columna LHS)** en todos los datos. Básicamente, nos dice qué tan popular es un conjunto de elementos en el conjunto de datos analizado (*datos decimales que representan datos procentuales*).
+4. **confidence**: La confianza nos dice qué tan probable es un *consecuente* cuando ha ocurrido el *antecedente*. Haciéndolo de forma análoga a la regla anterior, ¿qué probabilidad hay de que alguien compre el producto en la columna **RHS** cuando ya ha comprado el de la columna **LHS**?
+5. **lift**: El Levantamiento nos dice qué tan probable es el consecuente cuando el antecedente ya ha ocurrido, teniendo en cuenta el soporte de ambos antecedentes y consecuentes; si es < 1 *es poco probable*; si es 1 *no es probable*; si es  > 1 *es muy probable*.
+6. **count**: Cantidad de veces que ha ocurrido.
+
+## *Tabla Resumen de las reglas agrupadas*
+
+```{r message=FALSE, warning=FALSE}
+subconjunto.reglas <- which(colSums(is.subset(reglas.asociacion, reglas.asociacion)) > 1)
+subconjunto.reglas.asociacion <- reglas.asociacion[-subconjunto.reglas]
+```
+
+# *Buscar una regla de asociación de algún producto*
+
+```{r message=FALSE, warning=FALSE}
+sugar.reglas.asociacion <- apriori(tr, parameter = list(supp=0.001, conf=0.8), appearance = list(default="lhs",rhs="SUGAR"))
+inspectDT(head(sugar.reglas.asociacion))
+```
+
+
+## *Resumen del top 10 de las reglas de asociación encontradas*
+
+```{r message=FALSE, warning=FALSE}
+top10reglas <- head(reglas.asociacion, n = 10, by = "confidence")
+```
+
+## *Tabla top 10 Reglas de asociación con el algoritmo **Apriori***
+
+```{r message=FALSE, warning=FALSE}
+inspectDT(top10reglas)
+
+```
+
+## *Red de Reglas de asociación con el algoritmo Apriori*
+
+```{r message=FALSE, warning=FALSE}
+plot(top10reglas, method = "graph",  engine = "htmlwidget")
+```
+
+# **Conclusiones**
+<br>
+
+<div class=text-justify>
+El estudio de las **Reglas de asociaciones** es una herramienta de gran utilidad como herramienta de base para la toma de decisiones en la empresa, es un método eficaz para aprovechar la información de datos que hay disponible, ya que permite conocer los hábitos de compra de los clientes siendo una importante herramienta de marketing cuando se desea incrementar indicadores como **ticket medio**, distribución de Layout en tiendas, armados de **Packs** de productos, etc. ya que se puede usar la información para realizar recomendaciones a los clientes sobre productos relacionados y promocionar estos colocándolos muy cerca unos de otros en páginas Web, catálogos o en la misma estantería, etc.
+
+</div>
